@@ -5,31 +5,28 @@ import requests
 import joblib
 import time
 from datetime import datetime, timedelta
-import gtfs_realtime_pb2  # 👈 Local import (make sure gtfs_realtime_pb2.py is present)
-from tensorflow.keras.models import load_model  
+import gtfs_realtime_pb2  # Make sure this .py file is present locally
+from keras.models import load_model
 import folium
 from streamlit_folium import st_folium
-from keras.models import load_model as new_load_model
-from tensorflow.keras.models import load_model as legacy_load_model
 import os
-from keras.models import load_model
 
-model_path = "lstm_eta_model.keras"
+# === Load LSTM Model ===
+model_path = "lstm_eta_model.h5"  # ✅ recommended format
 if os.path.exists(model_path):
     try:
         model = load_model(model_path)
     except Exception as e:
         raise RuntimeError(f"❌ Error loading model from {model_path}: {e}")
 else:
-    raise FileNotFoundError(f"❌ Model file {model_path} not found.")
+    raise FileNotFoundError(f"❌ Model file {model_path} not found. Please upload it.")
 
-
-
-
-# === Load Model and Encoders ===
-model = load_model("lstm_eta_model.keras")  # 👈 Using new Keras model
-scaler = joblib.load("feature_scaler.pkl")
-weather_encoder = joblib.load("weather_encoder.pkl")
+# === Load Preprocessing Objects ===
+try:
+    scaler = joblib.load("feature_scaler.pkl")
+    weather_encoder = joblib.load("weather_encoder.pkl")
+except Exception as e:
+    raise FileNotFoundError(f"❌ Missing scaler or encoder file: {e}")
 
 # === API KEYS ===
 MTA_API_KEY = "bab3392b-58f0-42c2-8b61-421d6a03e72e"
@@ -108,7 +105,7 @@ if bus_data:
         else:
             weather_code = 0
 
-        # Simulate time sequence history (5 points)
+        # Simulate 5-point time series input
         point = [traffic_ratio, temp, weather_code]
         history = [point] * 5
         X = np.array(history)
