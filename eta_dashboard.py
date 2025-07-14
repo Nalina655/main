@@ -108,10 +108,11 @@ if bus_data:
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
+        # ✅ Safe popup (no HTML or <br>)
         popup_text = (
-            f"Bus ID: {bus['vehicle_id']}<br>"
-            f"Delay: {eta} sec<br>"
-            f"Weather: {weather}<br>"
+            f"Bus ID: {bus['vehicle_id']}\n"
+            f"Delay: {eta} sec\n"
+            f"Weather: {weather}\n"
             f"Traffic: {traffic_ratio}"
         )
 
@@ -119,8 +120,8 @@ if bus_data:
             folium.Marker(
                 location=[lat, lon],
                 tooltip=str(bus['vehicle_id']),
-                popup=folium.Popup(popup_text, max_width=250),
-                icon=folium.Icon(color="blue")  # Safe version without 'icon="bus", prefix="fa"'
+                popup=popup_text,  # Plain string — let folium auto-convert
+                icon=folium.Icon(color="blue")
             ).add_to(m)
         except Exception as marker_error:
             st.warning(f"❌ Error creating marker for bus {bus['vehicle_id']}: {marker_error}")
