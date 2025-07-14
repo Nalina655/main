@@ -9,6 +9,18 @@ import gtfs_realtime_pb2  # 👈 Local import (make sure gtfs_realtime_pb2.py is
 from tensorflow.keras.models import load_model  
 import folium
 from streamlit_folium import st_folium
+from keras.models import load_model as new_load_model
+from tensorflow.keras.models import load_model as legacy_load_model
+import os
+
+# Try loading the model
+if os.path.exists("lstm_eta_model.keras"):
+    model = new_load_model("lstm_eta_model.keras")
+elif os.path.exists("lstm_eta_model.h5"):
+    model = legacy_load_model("lstm_eta_model.h5")
+else:
+    raise FileNotFoundError("Model file not found.")
+
 
 # === Load Model and Encoders ===
 model = load_model("lstm_eta_model.keras")  # 👈 Using new Keras model
