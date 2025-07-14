@@ -3,9 +3,8 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
-import time
 from datetime import datetime, timedelta
-import gtfs_realtime_pb2  # Ensure gtfs_realtime_pb2.py is available
+import gtfs_realtime_pb2
 from keras.models import load_model
 import folium
 from streamlit_folium import st_folium
@@ -56,7 +55,7 @@ def fetch_mta_data():
                 "longitude": v.position.longitude,
                 "timestamp": v.timestamp
             })
-    return buses[:10]
+    return buses[:10]  # Limit to 10 buses
 
 def fetch_traffic(lat, lon):
     params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_API_KEY}
@@ -109,17 +108,19 @@ if bus_data:
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # Fix JSON serialization by using folium.Popup
-        popup_content = f"""
-        Bus ID: {bus['vehicle_id']}<br>
-        Delay: {eta} sec<br>
-        Weather: {weather}<br>
-        Traffic: {traffic_ratio}
-        """
+        # ✅ Safe popup formatting
+        popup_text = (
+            f"Bus ID: {bus['vehicle_id']}<br>"
+            f"Delay: {eta} sec<br>"
+            f"Weather: {weather}<br>"
+            f"Traffic: {traffic_ratio}"
+        )
+        popup = folium.Popup(popup_text, max_width=300)
+
         folium.Marker(
             [lat, lon],
             tooltip=str(bus['vehicle_id']),
-            popup=folium.Popup(popup_content, max_width=300),
+            popup=popup,
             icon=folium.Icon(color="blue", icon="bus", prefix="fa")
         ).add_to(m)
 
@@ -133,12 +134,16 @@ if bus_data:
             "Weather": weather
         })
 
-    # Display map safely
-    st_data = st_folium(m, width=700, height=500)
+    # Display folium map
+    try:
+        st_data = st_folium(m, width=700, height=500)
+    except Exception as e:
+        st.error("🛑 Error displaying map.")
+        st.text(str(e))
 
-    # Display table
+    # Display ETA table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 
 else:
-    st.warning("No bus data available.")
+    st.warning("⚠️ No bus data available.")
