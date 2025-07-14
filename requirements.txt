@@ -1,9 +1,9 @@
-streamlit==1.35.0
-pandas==2.2.1
-tensorflow==2.13.0
-folium
-joblib
+streamlit
+pandas
+numpy
 requests
-scikit-learn
-pytz
+joblib
+tensorflow
+folium
+streamlit-folium
 protobuf
