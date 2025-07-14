@@ -1,0 +1,9 @@
+streamlit==1.35.0
+pandas==2.2.1
+tensorflow==2.13.0
+folium
+joblib
+requests
+scikit-learn
+pytz
+protobuf
