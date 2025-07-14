@@ -13,9 +13,7 @@ from keras.models import load_model as new_load_model
 from tensorflow.keras.models import load_model as legacy_load_model
 import os
 
-import os
 
-# Try loading the model file (.keras preferred, fallback to .h5)
 try:
     if os.path.exists("lstm_eta_model.keras"):
         from keras.models import load_model as new_load_model
@@ -24,9 +22,11 @@ try:
         from tensorflow.keras.models import load_model as legacy_load_model
         model = legacy_load_model("lstm_eta_model.h5")
     else:
-        raise FileNotFoundError("No valid model file found (lstm_eta_model.keras or .h5)")
+        raise FileNotFoundError("No model file found.")
 except Exception as e:
-    raise RuntimeError(f"Error loading model: {e}")
+    print(f"❌ Model loading failed. Reason: {e}")
+    raise
+
 
 
 
