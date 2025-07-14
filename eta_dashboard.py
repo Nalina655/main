@@ -3,8 +3,9 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
+import time
 from datetime import datetime, timedelta
-import gtfs_realtime_pb2
+import gtfs_realtime_pb2  # Ensure gtfs_realtime_pb2.py is available
 from keras.models import load_model
 import folium
 from streamlit_folium import st_folium
@@ -18,7 +19,7 @@ if os.path.exists(model_path):
     except Exception as e:
         raise RuntimeError(f"❌ Error loading model from {model_path}: {e}")
 else:
-    raise FileNotFoundError(f"❌ Model file {model_path} not found.")
+    raise FileNotFoundError(f"❌ Model file {model_path} not found. Please upload it.")
 
 # === Load Preprocessing Objects ===
 try:
@@ -88,6 +89,7 @@ history = []
 if bus_data:
     first = bus_data[0]
     m = folium.Map(location=[first["latitude"], first["longitude"]], zoom_start=11)
+
     table_data = []
 
     for bus in bus_data:
@@ -97,37 +99,30 @@ if bus_data:
         ts = bus["timestamp"]
         ist_time = convert_to_ist(ts)
 
-        # Encode weather condition
-        try:
-            weather_code = weather_encoder.transform([weather])[0]
-        except:
-            weather_code = 0
+        weather_code = weather_encoder.transform([weather])[0] if weather in weather_encoder.classes_ else 0
 
-        # Prepare model input
         point = [traffic_ratio, temp, weather_code]
         history = [point] * 5
         X = np.array(history)
         X_scaled = scaler.transform(X).reshape(1, 5, 3)
 
-        # Predict ETA
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # Add marker to map
-        popup = folium.Popup(f"""
-            <b>Bus ID:</b> {bus['vehicle_id']}<br>
-            <b>ETA Delay:</b> {eta} sec<br>
-            <b>Weather:</b> {weather}<br>
-            <b>Traffic Ratio:</b> {traffic_ratio}
-        """, max_width=300)
+        # Fix JSON serialization by using folium.Popup
+        popup_content = f"""
+        Bus ID: {bus['vehicle_id']}<br>
+        Delay: {eta} sec<br>
+        Weather: {weather}<br>
+        Traffic: {traffic_ratio}
+        """
         folium.Marker(
             [lat, lon],
-            tooltip=f"{bus['vehicle_id']}",
-            popup=popup,
+            tooltip=str(bus['vehicle_id']),
+            popup=folium.Popup(popup_content, max_width=300),
             icon=folium.Icon(color="blue", icon="bus", prefix="fa")
         ).add_to(m)
 
-        # Add to table
         table_data.append({
             "Bus ID": bus["vehicle_id"],
             "Route": bus["route_id"],
@@ -138,11 +133,12 @@ if bus_data:
             "Weather": weather
         })
 
-    # ✅ FIXED: Safely display map
+    # Display map safely
     st_data = st_folium(m, width=700, height=500)
 
     # Display table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
+
 else:
-    st.warning("⚠️ No bus data available.")
+    st.warning("No bus data available.")
