@@ -1,9 +1,11 @@
 streamlit
-pandas
-numpy
-requests
-joblib
-tensorflow
-folium
 streamlit-folium
+folium
+numpy
+pandas
+requests
 protobuf
+joblib
+scikit-learn
+tensorflow==2.13.0
+keras==2.13.1
