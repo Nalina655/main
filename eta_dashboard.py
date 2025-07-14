@@ -55,7 +55,7 @@ def fetch_mta_data():
                 "longitude": v.position.longitude,
                 "timestamp": v.timestamp
             })
-    return buses[:10]  # Limit to 10 buses
+    return buses[:10]
 
 def fetch_traffic(lat, lon):
     params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_API_KEY}
@@ -108,21 +108,22 @@ if bus_data:
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # ✅ Safe popup formatting
         popup_text = (
             f"Bus ID: {bus['vehicle_id']}<br>"
             f"Delay: {eta} sec<br>"
             f"Weather: {weather}<br>"
             f"Traffic: {traffic_ratio}"
         )
-        popup = folium.Popup(popup_text, max_width=300)
 
-        folium.Marker(
-            [lat, lon],
-            tooltip=str(bus['vehicle_id']),
-            popup=popup,
-            icon=folium.Icon(color="blue", icon="bus", prefix="fa")
-        ).add_to(m)
+        try:
+            folium.Marker(
+                location=[lat, lon],
+                tooltip=str(bus['vehicle_id']),
+                popup=folium.Popup(popup_text, max_width=250),
+                icon=folium.Icon(color="blue")  # Safe version without 'icon="bus", prefix="fa"'
+            ).add_to(m)
+        except Exception as marker_error:
+            st.warning(f"❌ Error creating marker for bus {bus['vehicle_id']}: {marker_error}")
 
         table_data.append({
             "Bus ID": bus["vehicle_id"],
