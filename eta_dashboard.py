@@ -12,20 +12,16 @@ from streamlit_folium import st_folium
 from keras.models import load_model as new_load_model
 from tensorflow.keras.models import load_model as legacy_load_model
 import os
+from keras.models import load_model
 
-
-try:
-    if os.path.exists("lstm_eta_model.keras"):
-        from keras.models import load_model as new_load_model
-        model = new_load_model("lstm_eta_model.keras")
-    elif os.path.exists("lstm_eta_model.h5"):
-        from tensorflow.keras.models import load_model as legacy_load_model
-        model = legacy_load_model("lstm_eta_model.h5")
-    else:
-        raise FileNotFoundError("No model file found.")
-except Exception as e:
-    print(f"❌ Model loading failed. Reason: {e}")
-    raise
+model_path = "lstm_eta_model.keras"
+if os.path.exists(model_path):
+    try:
+        model = load_model(model_path)
+    except Exception as e:
+        raise RuntimeError(f"❌ Error loading model from {model_path}: {e}")
+else:
+    raise FileNotFoundError(f"❌ Model file {model_path} not found.")
 
 
 
