@@ -1,5 +1,3 @@
-# your streamlit app code (paste eta_dashboard.py here)
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,16 +5,13 @@ import requests
 import joblib
 import time
 from datetime import datetime, timedelta
-from google.transit import gtfs_realtime_pb2
-from tensorflow.keras.models import load_model
+import gtfs_realtime_pb2  # 👈 Local import (make sure gtfs_realtime_pb2.py is present)
+from keras.models import load_model
 import folium
 from streamlit_folium import st_folium
 
-
-
-
 # === Load Model and Encoders ===
-model = load_model("lstm_eta_model.h5")
+model = load_model("lstm_eta_model.keras")  # 👈 Using new Keras model
 scaler = joblib.load("feature_scaler.pkl")
 weather_encoder = joblib.load("weather_encoder.pkl")
 
@@ -97,7 +92,7 @@ if bus_data:
         else:
             weather_code = 0
 
-        # Sequence history per bus (5 points — simulate with last value repeated)
+        # Simulate time sequence history (5 points)
         point = [traffic_ratio, temp, weather_code]
         history = [point] * 5
         X = np.array(history)
@@ -106,7 +101,7 @@ if bus_data:
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # Add marker to map
+        # Add to map
         popup = f"Bus ID: {bus['vehicle_id']}<br>Delay: {eta} sec<br>Weather: {weather}<br>Traffic: {traffic_ratio}"
         folium.Marker([lat, lon], tooltip=f"{bus['vehicle_id']}", popup=popup,
                       icon=folium.Icon(color="blue", icon="bus", prefix="fa")).add_to(m)
@@ -122,10 +117,10 @@ if bus_data:
             "Weather": weather
         })
 
-    # Render map
+    # Display map
     st_folium(m, width=700, height=500)
 
-    # Show table
+    # Display data table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 else:
