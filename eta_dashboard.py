@@ -11,7 +11,7 @@ from google.transit import gtfs_realtime_pb2
 from tensorflow.keras.models import load_model
 import folium
 from streamlit_folium import st_folium
-import gtfs_realtime_pb2
+
 
 
 
