@@ -3,23 +3,22 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
-import time
 from datetime import datetime, timedelta
-import gtfs_realtime_pb2  # Make sure this .py file is present locally
+import gtfs_realtime_pb2
 from keras.models import load_model
 import folium
 from streamlit_folium import st_folium
 import os
 
 # === Load LSTM Model ===
-model_path = "lstm_eta_model.h5"  # ✅ recommended format
+model_path = "lstm_eta_model.h5"
 if os.path.exists(model_path):
     try:
         model = load_model(model_path)
     except Exception as e:
         raise RuntimeError(f"❌ Error loading model from {model_path}: {e}")
 else:
-    raise FileNotFoundError(f"❌ Model file {model_path} not found. Please upload it.")
+    raise FileNotFoundError(f"❌ Model file {model_path} not found.")
 
 # === Load Preprocessing Objects ===
 try:
@@ -56,7 +55,7 @@ def fetch_mta_data():
                 "longitude": v.position.longitude,
                 "timestamp": v.timestamp
             })
-    return buses[:10]  # Limit to 10 buses for demo
+    return buses[:10]
 
 def fetch_traffic(lat, lon):
     params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_API_KEY}
@@ -86,11 +85,9 @@ st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
 bus_data = fetch_mta_data()
 history = []
 
-# === Map setup ===
 if bus_data:
     first = bus_data[0]
     m = folium.Map(location=[first["latitude"], first["longitude"]], zoom_start=11)
-
     table_data = []
 
     for bus in bus_data:
@@ -100,24 +97,35 @@ if bus_data:
         ts = bus["timestamp"]
         ist_time = convert_to_ist(ts)
 
-        if weather in weather_encoder.classes_:
+        # Encode weather condition
+        try:
             weather_code = weather_encoder.transform([weather])[0]
-        else:
+        except:
             weather_code = 0
 
-        # Simulate 5-point time series input
+        # Prepare model input
         point = [traffic_ratio, temp, weather_code]
         history = [point] * 5
         X = np.array(history)
         X_scaled = scaler.transform(X).reshape(1, 5, 3)
 
+        # Predict ETA
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # Add to map
-        popup = f"Bus ID: {bus['vehicle_id']}<br>Delay: {eta} sec<br>Weather: {weather}<br>Traffic: {traffic_ratio}"
-        folium.Marker([lat, lon], tooltip=f"{bus['vehicle_id']}", popup=popup,
-                      icon=folium.Icon(color="blue", icon="bus", prefix="fa")).add_to(m)
+        # Add marker to map
+        popup = folium.Popup(f"""
+            <b>Bus ID:</b> {bus['vehicle_id']}<br>
+            <b>ETA Delay:</b> {eta} sec<br>
+            <b>Weather:</b> {weather}<br>
+            <b>Traffic Ratio:</b> {traffic_ratio}
+        """, max_width=300)
+        folium.Marker(
+            [lat, lon],
+            tooltip=f"{bus['vehicle_id']}",
+            popup=popup,
+            icon=folium.Icon(color="blue", icon="bus", prefix="fa")
+        ).add_to(m)
 
         # Add to table
         table_data.append({
@@ -130,11 +138,11 @@ if bus_data:
             "Weather": weather
         })
 
-    # Display map
-    st_folium(m, width=700, height=500)
+    # ✅ FIXED: Safely display map
+    st_data = st_folium(m, width=700, height=500)
 
-    # Display data table
+    # Display table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 else:
-    st.warning("No bus data available.")
+    st.warning("⚠️ No bus data available.")
