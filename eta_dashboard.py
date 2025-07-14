@@ -6,7 +6,7 @@ import joblib
 import time
 from datetime import datetime, timedelta
 import gtfs_realtime_pb2  # 👈 Local import (make sure gtfs_realtime_pb2.py is present)
-from keras.models import load_model
+from tensorflow.keras.models import load_model  ✅
 import folium
 from streamlit_folium import st_folium
 
