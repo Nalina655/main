@@ -91,36 +91,51 @@ if bus_data:
     table_data = []
 
     for bus in bus_data:
-        lat, lon = bus["latitude"], bus["longitude"]
+        lat = bus.get("latitude")
+        lon = bus.get("longitude")
+        if lat is None or lon is None:
+            continue  # Skip if GPS data is missing
+
         traffic_ratio = fetch_traffic(lat, lon)
         temp, weather = fetch_weather(lat, lon)
-        ts = bus["timestamp"]
-        ist_time = convert_to_ist(ts)
+        ist_time = convert_to_ist(bus["timestamp"])
 
-        weather_encoded = weather_encoder.transform([weather])[0] if weather in weather_encoder.classes_ else 0
+        # Encode weather (safely fallback to 0)
+        if weather in weather_encoder.classes_:
+            weather_encoded = weather_encoder.transform([weather])[0]
+        else:
+            weather_encoded = 0
+
+        # Create model input
         point = [traffic_ratio, temp, weather_encoded]
         X_df = pd.DataFrame([point] * 5, columns=["traffic_ratio", "temperature", "weather_encoded"])
         X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
-        eta = float(model.predict(X_scaled)[0][0])
+
+        # Predict ETA
+        try:
+            eta = float(model.predict(X_scaled)[0][0])
+        except Exception as prediction_error:
+            st.error(f"❌ ETA prediction failed: {prediction_error}")
+            eta = 0
         eta = max(0, round(eta))
 
+        # ✅ ONLY PASS STRINGS to tooltip/popup
         popup_text = (
             f"Bus ID: {bus['vehicle_id']}<br>"
-            f"Delay: {eta} sec<br>"
+            f"ETA Delay: {eta} sec<br>"
             f"Weather: {weather}<br>"
-            f"Traffic: {traffic_ratio}"
+            f"Traffic Ratio: {traffic_ratio}"
         )
 
         try:
-            marker = folium.Marker(
+            folium.Marker(
                 location=[lat, lon],
-                tooltip=bus["vehicle_id"],
-                popup=popup_text,
+                tooltip=str(bus["vehicle_id"]),  # ✅ Always string
+                popup=popup_text,                 # ✅ Plain HTML string
                 icon=folium.Icon(color="blue")
-            )
-            marker.add_to(m)
+            ).add_to(m)
         except Exception as marker_error:
-            st.warning(f"❌ Marker error for bus {bus['vehicle_id']}: {marker_error}")
+            st.warning(f"⚠️ Could not add marker for bus {bus['vehicle_id']}: {marker_error}")
 
         table_data.append({
             "Bus ID": bus["vehicle_id"],
@@ -132,7 +147,7 @@ if bus_data:
             "Weather": weather
         })
 
-    # ✅ Final safe map render
+    # ✅ FINAL MAP RENDER (safe)
     try:
         st_folium(m, width=700, height=500)
     except Exception as e:
@@ -142,4 +157,7 @@ if bus_data:
     # ✅ Show table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
+
+else:
+    st.warning("⚠️ No bus data available.")
 
