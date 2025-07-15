@@ -83,13 +83,11 @@ st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
 st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
 
 bus_data = fetch_mta_data()
-history = []
+table_data = []
 
 if bus_data:
     first = bus_data[0]
     m = folium.Map(location=[first["latitude"], first["longitude"]], zoom_start=11)
-
-    table_data = []
 
     for bus in bus_data:
         lat, lon = bus["latitude"], bus["longitude"]
@@ -98,20 +96,18 @@ if bus_data:
         ts = bus["timestamp"]
         ist_time = convert_to_ist(ts)
 
-        weather_encoded = weather_encoder.transform([weather])[0] if weather in weather_encoder.classes_ else 0
-
+        weather_encoded = (
+            weather_encoder.transform([weather])[0]
+            if weather in weather_encoder.classes_
+            else 0
+        )
         point = [traffic_ratio, temp, weather_encoded]
-        history = [point] * 5
-
-        # Fix for sklearn warning — use DataFrame with feature names
-        df_cols = ["traffic_ratio", "temperature", "weather_encoded"]
-        X_df = pd.DataFrame(history, columns=df_cols)
+        X_df = pd.DataFrame([point] * 5, columns=["traffic_ratio", "temperature", "weather_encoded"])
         X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
-
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # ✅ HTML-safe popup
+        # ✅ Safe popup string
         popup_html = (
             f"Bus ID: {bus['vehicle_id']}<br>"
             f"Delay: {eta} sec<br>"
@@ -122,12 +118,12 @@ if bus_data:
         try:
             folium.Marker(
                 location=[lat, lon],
-                tooltip=str(bus['vehicle_id']),
-                popup=folium.Popup(popup_html, max_width=250),
+                tooltip=bus["vehicle_id"],  # Already a string
+                popup=popup_html,            # Just string
                 icon=folium.Icon(color="blue")
             ).add_to(m)
         except Exception as marker_error:
-            st.warning(f"❌ Error creating marker for bus {bus['vehicle_id']}: {marker_error}")
+            st.warning(f"❌ Marker error for bus {bus['vehicle_id']}: {marker_error}")
 
         table_data.append({
             "Bus ID": bus["vehicle_id"],
@@ -139,14 +135,14 @@ if bus_data:
             "Weather": weather
         })
 
-    # Display folium map
+    # ✅ Display map
     try:
-        st_data = st_folium(m, width=700, height=500)
+        st_folium(m, width=700, height=500)
     except Exception as e:
         st.error("🚩 Error displaying map.")
         st.text(str(e))
 
-    # Display ETA table
+    # ✅ Display ETA Table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 
