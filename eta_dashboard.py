@@ -88,6 +88,7 @@ table_data = []
 if bus_data:
     first = bus_data[0]
     m = folium.Map(location=[first["latitude"], first["longitude"]], zoom_start=11)
+    table_data = []
 
     for bus in bus_data:
         lat, lon = bus["latitude"], bus["longitude"]
@@ -107,7 +108,7 @@ if bus_data:
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
-        # ✅ Safe popup string
+        # ✅ Safe plain string for popup (no folium.Popup())
         popup_html = (
             f"Bus ID: {bus['vehicle_id']}<br>"
             f"Delay: {eta} sec<br>"
@@ -119,7 +120,7 @@ if bus_data:
             folium.Marker(
                 location=[lat, lon],
                 tooltip=bus["vehicle_id"],  # Already a string
-                popup=popup_html,            # Just string
+                popup=popup_html,            # ❌ Don't use folium.Popup()
                 icon=folium.Icon(color="blue")
             ).add_to(m)
         except Exception as marker_error:
@@ -142,7 +143,7 @@ if bus_data:
         st.error("🚩 Error displaying map.")
         st.text(str(e))
 
-    # ✅ Display ETA Table
+    # ✅ Display table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 
