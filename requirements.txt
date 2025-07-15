@@ -7,4 +7,5 @@ requests
 folium
 streamlit-folium
 protobuf
-scikit-learn
+scikit-learn==1.6.1
+
