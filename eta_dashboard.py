@@ -98,13 +98,13 @@ if bus_data:
         ts = bus["timestamp"]
         ist_time = convert_to_ist(ts)
 
-        weather_code = weather_encoder.transform([weather])[0] if weather in weather_encoder.classes_ else 0
+        weather_encoded = weather_encoder.transform([weather])[0] if weather in weather_encoder.classes_ else 0
 
-        point = [traffic_ratio, temp, weather_code]
+        point = [traffic_ratio, temp, weather_encoded]
         history = [point] * 5
 
         # Fix for sklearn warning — use DataFrame with feature names
-        df_cols = ["traffic_ratio", "temperature", "weather_code"]
+        df_cols = ["traffic_ratio", "temperature", "weather_encoded"]
         X_df = pd.DataFrame(history, columns=df_cols)
         X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
 
@@ -143,7 +143,7 @@ if bus_data:
     try:
         st_data = st_folium(m, width=700, height=500)
     except Exception as e:
-        st.error("🛑 Error displaying map.")
+        st.error("🚩 Error displaying map.")
         st.text(str(e))
 
     # Display ETA table
