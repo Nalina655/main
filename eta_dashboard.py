@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 import requests
 import joblib
-from datetime import datetime, timedelta
+from datetime import datetime
+import pytz
 import gtfs_realtime_pb2
 from keras.models import load_model
 import folium
@@ -38,6 +39,12 @@ TOMTOM_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 # === Helper Functions ===
+def convert_to_ny(utc_timestamp):
+    utc_dt = datetime.utcfromtimestamp(utc_timestamp).replace(tzinfo=pytz.utc)
+    ny_tz = pytz.timezone("America/New_York")
+    ny_time = utc_dt.astimezone(ny_tz)
+    return ny_time.strftime("%Y-%m-%d %H:%M:%S")
+
 def fetch_mta_data():
     headers = {"x-api-key": MTA_API_KEY}
     response = requests.get(MTA_API_URL, headers=headers)
@@ -73,11 +80,6 @@ def fetch_weather(lat, lon):
         return d["main"]["temp"], d["weather"][0]["main"]
     return 25.0, "Clear"
 
-def convert_to_ist(utc_timestamp):
-    utc_time = datetime.utcfromtimestamp(utc_timestamp)
-    ist_time = utc_time + timedelta(hours=5, minutes=30)
-    return ist_time.strftime("%H:%M:%S")
-
 # === Streamlit UI ===
 st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
 st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
@@ -94,7 +96,7 @@ if bus_data:
         traffic_ratio = fetch_traffic(lat, lon)
         temp, weather = fetch_weather(lat, lon)
         ts = bus["timestamp"]
-        ist_time = convert_to_ist(ts)
+        ny_time = convert_to_ny(ts)
 
         weather_encoded = (
             weather_encoder.transform([weather])[0]
@@ -127,7 +129,7 @@ if bus_data:
         table_data.append({
             "Bus ID": bus["vehicle_id"],
             "Route": bus["route_id"],
-            "Time": ist_time,
+            "Time (NY)": ny_time,
             "ETA Delay (sec)": eta,
             "Traffic Ratio": traffic_ratio,
             "Temperature (°C)": temp,
