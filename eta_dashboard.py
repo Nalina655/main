@@ -96,13 +96,18 @@ if bus_data:
         ts = bus["timestamp"]
         ist_time = convert_to_ist(ts)
 
-        weather_encoded = weather_encoder.transform([weather])[0] if weather in weather_encoder.classes_ else 0
+        weather_encoded = (
+            weather_encoder.transform([weather])[0]
+            if weather in weather_encoder.classes_
+            else 0
+        )
         point = [traffic_ratio, temp, weather_encoded]
         X_df = pd.DataFrame([point] * 5, columns=["traffic_ratio", "temperature", "weather_encoded"])
         X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
         eta = float(model.predict(X_scaled)[0][0])
         eta = max(0, round(eta))
 
+        # ✅ Safe popup string
         popup_html = (
             f"Bus ID: {bus['vehicle_id']}<br>"
             f"Delay: {eta} sec<br>"
@@ -110,12 +115,15 @@ if bus_data:
             f"Traffic: {traffic_ratio}"
         )
 
-        folium.Marker(
-            location=[lat, lon],
-            tooltip=str(bus["vehicle_id"]),
-            popup=folium.Popup(popup_html, max_width=250),
-            icon=folium.Icon(color="blue")
-        ).add_to(m)
+        try:
+            folium.Marker(
+                location=[lat, lon],
+                tooltip=bus["vehicle_id"],  # Already a string
+                popup=popup_html,            # Just string
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+        except Exception as marker_error:
+            st.warning(f"❌ Marker error for bus {bus['vehicle_id']}: {marker_error}")
 
         table_data.append({
             "Bus ID": bus["vehicle_id"],
@@ -127,12 +135,14 @@ if bus_data:
             "Weather": weather
         })
 
+    # ✅ Display map
     try:
         st_folium(m, width=700, height=500)
     except Exception as e:
         st.error("🚩 Error displaying map.")
         st.text(str(e))
 
+    # ✅ Display ETA Table
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 
