@@ -110,9 +110,15 @@ if bus_data:
             eta = 0
         else:
             X_df = pd.DataFrame(st.session_state["bus_history"][vehicle_id], columns=["traffic_ratio", "temperature", "weather_encoded"])
-            X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
-            eta = model.predict(X_scaled)[0][0]
-            eta = max(0, round(float(eta)))
+            X_scaled = scaler.transform(X_df)
+            X_scaled = np.array(X_scaled).reshape(1, 5, 3)
+            try:
+                prediction = model.predict(X_scaled)
+                eta = prediction[0][0] if prediction.ndim == 2 else prediction[0]
+                eta = max(0, round(float(eta)))
+            except Exception as e:
+                st.error(f"Prediction failed for {vehicle_id}: {e}")
+                eta = 0
 
         folium.Marker(
             location=[lat, lon],
