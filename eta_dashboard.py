@@ -76,6 +76,7 @@ def fetch_weather(lat, lon):
     return 25.0, "Clear"
 
 # === Streamlit App ===
+# === Streamlit App ===
 st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
 st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
 
@@ -91,63 +92,58 @@ if bus_data:
         temp, weather = fetch_weather(lat, lon)
         ny_time = convert_to_ny(bus["timestamp"])
 
-        # ✅ inside your for bus in bus_data loop:
+        # === ETA prediction block inside loop
+        try:
+            weather_encoded = weather_encoder.transform([weather])[0]
+        except:
+            weather_encoded = 0
 
-try:
-    weather_encoded = weather_encoder.transform([weather])[0]
-except:
-    weather_encoded = 0
+        sequence = [
+            [traffic_ratio * (1 + i * 0.05), temp + i * 0.2, weather_encoded]
+            for i in range(5)
+        ]
+        X_df = pd.DataFrame(sequence, columns=["traffic_ratio", "temperature", "weather_encoded"])
+        X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
 
-# ✅ Simulate 5-step dynamic sequence
-sequence = [
-    [traffic_ratio * (1 + i * 0.05), temp + i * 0.2, weather_encoded]
-    for i in range(5)
-]
-X_df = pd.DataFrame(sequence, columns=["traffic_ratio", "temperature", "weather_encoded"])
-X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
+        try:
+            raw_eta = float(model.predict(X_scaled)[0][0])
+            eta = max(0, round(raw_eta))
+        except:
+            raw_eta = 0.0
+            eta = 0
 
-# ✅ Predict ETA
-try:
-    raw_eta = float(model.predict(X_scaled)[0][0])
-    eta = max(0, round(raw_eta))
-except:
-    raw_eta = 0.0
-    eta = 0
+        popup = (
+            f"Bus ID: {bus['vehicle_id']}<br>"
+            f"Delay: {eta} sec (raw: {round(raw_eta, 2)}s)<br>"
+            f"Weather: {weather}<br>"
+            f"Traffic: {traffic_ratio}"
+        )
 
-# ✅ Updated popup with raw ETA
-popup = (
-    f"Bus ID: {bus['vehicle_id']}<br>"
-    f"Delay: {eta} sec (raw: {round(raw_eta, 2)}s)<br>"
-    f"Weather: {weather}<br>"
-    f"Traffic: {traffic_ratio}"
-)
+        try:
+            folium.Marker(
+                location=[lat, lon],
+                tooltip=bus["vehicle_id"],
+                popup=popup,
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+        except:
+            pass
 
-try:
-    folium.Marker(
-        location=[lat, lon],
-        tooltip=bus["vehicle_id"],
-        popup=popup,
-        icon=folium.Icon(color="blue")
-    ).add_to(m)
-except:
-    pass
+        table_data.append({
+            "Bus ID": bus["vehicle_id"],
+            "Route": bus["route_id"],
+            "Time (NY)": ny_time,
+            "ETA Delay (sec)": eta,
+            "ETA Raw (s)": round(raw_eta, 2),
+            "Traffic Ratio": traffic_ratio,
+            "Temperature (°C)": temp,
+            "Weather": weather
+        })
 
-# ✅ Add raw ETA to table
-table_data.append({
-    "Bus ID": bus["vehicle_id"],
-    "Route": bus["route_id"],
-    "Time (NY)": ny_time,
-    "ETA Delay (sec)": eta,
-    "ETA Raw (s)": round(raw_eta, 2),
-    "Traffic Ratio": traffic_ratio,
-    "Temperature (°C)": temp,
-    "Weather": weather
-})
-
-
-    # ✅ Fixed: folium_static works
+    # ✅ Show map and table
     folium_static(m, width=700, height=500)
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
+
 else:
     st.warning("⚠️ No bus data available.")
