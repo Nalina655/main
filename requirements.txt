@@ -9,4 +9,6 @@ folium
 streamlit-folium
 protobuf
 scikit-learn
+streamlit-autorefresh
+
 
