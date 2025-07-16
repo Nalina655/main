@@ -11,22 +11,20 @@ import folium
 from streamlit_folium import st_folium
 import os
 
-# === Load LSTM Model ===
+# === Load Model and Preprocessors ===
 model_path = "lstm_eta_model.h5"
 if os.path.exists(model_path):
-    try:
-        model = load_model(model_path)
-    except Exception as e:
-        raise RuntimeError(f"❌ Error loading model from {model_path}: {e}")
+    model = load_model(model_path)
 else:
-    raise FileNotFoundError(f"❌ Model file {model_path} not found. Please upload it.")
+    st.error(f"❌ Model file not found: {model_path}")
+    st.stop()
 
-# === Load Preprocessing Objects ===
 try:
     scaler = joblib.load("feature_scaler.pkl")
     weather_encoder = joblib.load("weather_encoder.pkl")
 except Exception as e:
-    raise FileNotFoundError(f"❌ Missing scaler or encoder file: {e}")
+    st.error(f"❌ Error loading scaler/encoder: {e}")
+    st.stop()
 
 # === API KEYS ===
 MTA_API_KEY = "bab3392b-58f0-42c2-8b61-421d6a03e72e"
@@ -84,6 +82,10 @@ def fetch_weather(lat, lon):
 st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
 st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
 
+# Store per-bus history in session
+if "bus_history" not in st.session_state:
+    st.session_state["bus_history"] = {}
+
 bus_data = fetch_mta_data()
 table_data = []
 
@@ -93,24 +95,37 @@ if bus_data:
 
     for bus in bus_data:
         lat, lon = bus["latitude"], bus["longitude"]
-        traffic_ratio = fetch_traffic(lat, lon)
-        temp, weather = fetch_weather(lat, lon)
         ts = bus["timestamp"]
         ny_time = convert_to_ny(ts)
+        vehicle_id = bus["vehicle_id"]
+
+        traffic_ratio = fetch_traffic(lat, lon)
+        temp, weather = fetch_weather(lat, lon)
 
         weather_encoded = (
             weather_encoder.transform([weather])[0]
             if weather in weather_encoder.classes_
             else 0
         )
+
+        # Store time-series history per bus
         point = [traffic_ratio, temp, weather_encoded]
-        X_df = pd.DataFrame([point] * 5, columns=["traffic_ratio", "temperature", "weather_encoded"])
-        X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
-        eta = float(model.predict(X_scaled)[0][0])
-        eta = max(0, round(eta))
+        if vehicle_id not in st.session_state["bus_history"]:
+            st.session_state["bus_history"][vehicle_id] = []
+        st.session_state["bus_history"][vehicle_id].append(point)
+        history = st.session_state["bus_history"][vehicle_id][-5:]
+
+        # Predict ETA if enough data
+        if len(history) < 5:
+            eta = 0
+        else:
+            X_df = pd.DataFrame(history, columns=["traffic_ratio", "temperature", "weather_encoded"])
+            X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
+            eta = float(model.predict(X_scaled)[0][0])
+            eta = max(0, round(eta))
 
         popup_html = (
-            f"Bus ID: {bus['vehicle_id']}<br>"
+            f"Bus ID: {vehicle_id}<br>"
             f"Delay: {eta} sec<br>"
             f"Weather: {weather}<br>"
             f"Traffic: {traffic_ratio}"
@@ -119,15 +134,15 @@ if bus_data:
         try:
             folium.Marker(
                 location=[lat, lon],
-                tooltip=bus["vehicle_id"],
+                tooltip=vehicle_id,
                 popup=popup_html,
                 icon=folium.Icon(color="blue")
             ).add_to(m)
-        except Exception as marker_error:
-            st.warning(f"❌ Marker error for bus {bus['vehicle_id']}: {marker_error}")
+        except Exception as e:
+            st.warning(f"⚠️ Marker error: {e}")
 
         table_data.append({
-            "Bus ID": bus["vehicle_id"],
+            "Bus ID": vehicle_id,
             "Route": bus["route_id"],
             "Time (NY)": ny_time,
             "ETA Delay (sec)": eta,
@@ -147,3 +162,6 @@ if bus_data:
 
 else:
     st.warning("⚠️ No bus data available.")
+
+# Optional: Auto-refresh every 30s
+st.experimental_rerun()
