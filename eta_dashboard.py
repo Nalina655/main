@@ -1,4 +1,6 @@
 import streamlit as st
+# === Auto-refresh every 30s ===
+st_autorefresh(interval=30000, limit=None, key="auto_refresh")
 import pandas as pd
 import numpy as np
 import requests
@@ -12,9 +14,6 @@ from streamlit_folium import folium_static
 from streamlit_autorefresh import st_autorefresh
 import os
 from collections import deque
-
-# === Auto-refresh every 30s ===
-st_autorefresh(interval=30000, limit=None, key="auto_refresh")
 
 # === Refresh Time Info ===
 st.caption(f"⏱ Last updated at {datetime.now().strftime('%H:%M:%S')}")
