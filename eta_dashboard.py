@@ -5,7 +5,7 @@ import requests
 import joblib
 from datetime import datetime
 import pytz
-import gtfs_realtime_pb2
+from google.transit import gtfs_realtime_pb2
 from keras.models import load_model
 import folium
 from streamlit_folium import folium_static
@@ -28,28 +28,35 @@ OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 # === Helper Functions ===
 def convert_to_ny(utc_timestamp):
-    utc_dt = datetime.utcfromtimestamp(utc_timestamp).replace(tzinfo=pytz.utc)
-    ny_tz = pytz.timezone("America/New_York")
-    return ny_tz.normalize(utc_dt).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        utc_dt = datetime.utcfromtimestamp(utc_timestamp).replace(tzinfo=pytz.utc)
+        ny_tz = pytz.timezone("America/New_York")
+        return ny_tz.normalize(utc_dt).strftime("%Y-%m-%d %H:%M:%S")
+    except:
+        return "Unknown"
 
 def fetch_mta_data():
     headers = {"x-api-key": MTA_API_KEY}
-    response = requests.get(MTA_API_URL, headers=headers)
-    feed = gtfs_realtime_pb2.FeedMessage()
-    feed.ParseFromString(response.content)
-    buses = []
-    for entity in feed.entity:
-        if entity.HasField("vehicle"):
-            v = entity.vehicle
-            buses.append({
-                "vehicle_id": v.vehicle.id,
-                "route_id": v.trip.route_id,
-                "trip_id": v.trip.trip_id,
-                "latitude": v.position.latitude,
-                "longitude": v.position.longitude,
-                "timestamp": v.timestamp
-            })
-    return buses[:10]
+    try:
+        response = requests.get(MTA_API_URL, headers=headers)
+        feed = gtfs_realtime_pb2.FeedMessage()
+        feed.ParseFromString(response.content)
+        buses = []
+        for entity in feed.entity:
+            if entity.HasField("vehicle"):
+                v = entity.vehicle
+                buses.append({
+                    "vehicle_id": v.vehicle.id,
+                    "route_id": v.trip.route_id,
+                    "trip_id": v.trip.trip_id,
+                    "latitude": v.position.latitude,
+                    "longitude": v.position.longitude,
+                    "timestamp": v.timestamp
+                })
+        return buses[:10]
+    except Exception as e:
+        st.error(f"Failed to fetch MTA bus data: {e}")
+        return []
 
 def fetch_traffic(lat, lon):
     try:
@@ -75,7 +82,7 @@ def fetch_weather(lat, lon):
 
 # === Streamlit UI ===
 st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
-st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model) — v2")
+st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model) — v3")
 
 if "bus_history" not in st.session_state:
     st.session_state["bus_history"] = {}
@@ -88,10 +95,13 @@ if bus_data:
     m = folium.Map(location=[first["latitude"], first["longitude"]], zoom_start=11)
 
     for bus in bus_data:
-        lat, lon = bus["latitude"], bus["longitude"]
-        ts = bus["timestamp"]
+        lat, lon = bus.get("latitude"), bus.get("longitude")
+        if lat is None or lon is None:
+            continue
+
+        ts = bus.get("timestamp")
         ny_time = convert_to_ny(ts)
-        vehicle_id = bus["vehicle_id"]
+        vehicle_id = bus.get("vehicle_id", "N/A")
 
         traffic_ratio = fetch_traffic(lat, lon)
         temp, weather = fetch_weather(lat, lon)
@@ -106,16 +116,15 @@ if bus_data:
         history.append(point)
         st.session_state["bus_history"][vehicle_id] = history[-5:]
 
-        if len(st.session_state["bus_history"][vehicle_id]) < 5:
+        if len(history) < 5:
             eta = 0
         else:
-            X_df = pd.DataFrame(st.session_state["bus_history"][vehicle_id], columns=["traffic_ratio", "temperature", "weather_encoded"])
-            X_scaled = scaler.transform(X_df)
-            X_scaled = np.array(X_scaled).reshape(1, 5, 3)
             try:
+                X_df = pd.DataFrame(history[-5:], columns=["traffic_ratio", "temperature", "weather_encoded"])
+                X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
                 prediction = model.predict(X_scaled)
-                eta = prediction[0][0] if prediction.ndim == 2 else prediction[0]
-                eta = max(0, round(float(eta)))
+                eta = float(prediction[0][0]) if prediction.ndim == 2 else float(prediction[0])
+                eta = max(0, round(eta))
             except Exception as e:
                 st.error(f"Prediction failed for {vehicle_id}: {e}")
                 eta = 0
@@ -125,7 +134,7 @@ if bus_data:
                 location=[lat, lon],
                 tooltip=str(vehicle_id),
                 popup=f"Bus ID: {vehicle_id}<br>Delay: {eta} sec<br>Weather: {weather}<br>Traffic: {traffic_ratio}",
-                icon=folium.Icon(color="blue")
+                icon=folium.Icon(color="green" if eta == 0 else "red")
             ).add_to(m)
         except Exception as marker_error:
             st.warning(f"Failed to add marker for {vehicle_id}: {marker_error}")
@@ -140,9 +149,13 @@ if bus_data:
             "Weather": weather
         })
 
-    folium_static(m, width=700, height=500)
+    try:
+        folium_static(m, width=700, height=500)
+    except Exception as folium_error:
+        st.error("🚨 Error rendering map.")
+        st.text(str(folium_error))
+
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
-
 else:
     st.warning("⚠️ No bus data available.")
