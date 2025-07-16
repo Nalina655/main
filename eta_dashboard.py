@@ -75,7 +75,7 @@ def fetch_weather(lat, lon):
 
 # === Streamlit UI ===
 st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
-st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
+st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model) — v2")
 
 if "bus_history" not in st.session_state:
     st.session_state["bus_history"] = {}
@@ -120,12 +120,15 @@ if bus_data:
                 st.error(f"Prediction failed for {vehicle_id}: {e}")
                 eta = 0
 
-        folium.Marker(
-            location=[lat, lon],
-            tooltip=str(vehicle_id),
-            popup=str(f"Bus ID: {vehicle_id}<br>Delay: {eta} sec<br>Weather: {weather}<br>Traffic: {traffic_ratio}"),
-            icon=folium.Icon(color="blue")
-        ).add_to(m)
+        try:
+            folium.Marker(
+                location=[lat, lon],
+                tooltip=str(vehicle_id),
+                popup=f"Bus ID: {vehicle_id}<br>Delay: {eta} sec<br>Weather: {weather}<br>Traffic: {traffic_ratio}",
+                icon=folium.Icon(color="blue")
+            ).add_to(m)
+        except Exception as marker_error:
+            st.warning(f"Failed to add marker for {vehicle_id}: {marker_error}")
 
         table_data.append({
             "Bus ID": vehicle_id,
