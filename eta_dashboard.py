@@ -1,6 +1,10 @@
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh  # ✅ must import before use
+st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")  # ✅ must be very first Streamlit command
+
 # === Auto-refresh every 30s ===
 st_autorefresh(interval=30000, limit=None, key="auto_refresh")
+
 import pandas as pd
 import numpy as np
 import requests
@@ -11,14 +15,13 @@ import gtfs_realtime_pb2
 from keras.models import load_model
 import folium
 from streamlit_folium import folium_static
-from streamlit_autorefresh import st_autorefresh
-import os
 from collections import deque
+import os
 
-# === Refresh Time Info ===
+# === Timestamp Display ===
 st.caption(f"⏱ Last updated at {datetime.now().strftime('%H:%M:%S')}")
 
-# === Load LSTM Model ===
+# === Load Model ===
 model_path = "lstm_eta_model.h5"
 if os.path.exists(model_path):
     model = load_model(model_path, compile=False)
@@ -32,17 +35,16 @@ try:
 except Exception as e:
     raise FileNotFoundError(f"❌ Missing scaler or encoder: {e}")
 
-# === API Keys ===
+# === API Keys & URLs ===
 MTA_API_KEY = "bab3392b-58f0-42c2-8b61-421d6a03e72e"
 TOMTOM_API_KEY = "gmKSHRhMEQ1oXOnhV5wKL2B3WE45SZL9"
 OPENWEATHER_API_KEY = "d7836e8948f06edd3c191fa978ff266f"
 
-# === API URLs ===
 MTA_API_URL = "https://gtfsrt.prod.obanyc.com/vehiclePositions"
 TOMTOM_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
 
-# === Helper Functions ===
+# === Helpers ===
 def convert_to_ny(utc_timestamp):
     dt = datetime.utcfromtimestamp(utc_timestamp).replace(tzinfo=pytz.utc)
     return dt.astimezone(pytz.timezone("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
@@ -82,11 +84,10 @@ def fetch_weather(lat, lon):
         return data["main"]["temp"], data["weather"][0]["main"]
     return 25.0, "Clear"
 
-# === Maintain per-bus history (5-step) ===
+# === Session History for 5-step LSTM input ===
 history = st.session_state.get("bus_history", {})
 
-# === Streamlit App ===
-st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
+# === App Content ===
 st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
 
 bus_data = fetch_mta_data()
@@ -102,18 +103,18 @@ if bus_data:
         ny_time = convert_to_ny(bus["timestamp"])
         bus_id = bus["vehicle_id"]
 
-        # === Encode weather
+        # Encode weather
         try:
             weather_encoded = weather_encoder.transform([weather])[0]
         except:
             weather_encoded = 0
 
-        # === Update history
+        # Maintain per-bus 5-step history
         if bus_id not in history:
             history[bus_id] = deque(maxlen=5)
         history[bus_id].append([traffic_ratio, temp, weather_encoded])
 
-        # === Predict if enough history, else fallback
+        # Predict ETA
         if len(history[bus_id]) == 5:
             X_df = pd.DataFrame(history[bus_id], columns=["traffic_ratio", "temperature", "weather_encoded"])
             X_scaled = scaler.transform(X_df).reshape(1, 5, 3)
@@ -123,12 +124,11 @@ if bus_data:
                     raw_eta = (traffic_ratio - 1) * 60
                 eta = max(0, round(raw_eta))
             except:
-                raw_eta = 0.0
                 eta = int((traffic_ratio - 1) * 60) if traffic_ratio > 1.1 else 0
         else:
             eta = int((traffic_ratio - 1) * 60) if traffic_ratio > 1.1 else 0
 
-        # === Popup marker
+        # Add marker
         popup = (
             f"Bus ID: {bus_id}<br>"
             f"Delay: {eta} sec<br>"
@@ -146,7 +146,6 @@ if bus_data:
         except:
             pass
 
-        # === Add to table
         table_data.append({
             "Bus ID": bus_id,
             "Route": bus["route_id"],
@@ -157,12 +156,12 @@ if bus_data:
             "Weather": weather
         })
 
-    # === Show Map and Table
+    # Show map and table
     folium_static(m, width=700, height=500)
     st.subheader("📊 Live ETA Predictions")
     st.dataframe(pd.DataFrame(table_data))
 
-    # Save history to session
+    # Save updated history
     st.session_state["bus_history"] = history
 
 else:
