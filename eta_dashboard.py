@@ -2,7 +2,7 @@ import time
 import requests
 from datetime import datetime, timedelta
 from google.transit import gtfs_realtime_pb2
-import pytz  # ✅ added for timezone conversion
+import pytz
 
 # ======== 🔐 API KEYS ===========
 MTA_API_KEY = "bab3392b-58f0-42c2-8b61-421d6a03e72e"
@@ -46,11 +46,7 @@ def fetch_mta_data():
 
 # ======== 🌍 Reverse Geocoding ===========
 def get_place_name(lat, lon):
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "format": "json"
-    }
+    params = {"lat": lat, "lon": lon, "format": "json"}
     try:
         r = requests.get(REVERSE_GEOCODE_URL, params=params, headers={"User-Agent": "MTA-Bus-Tracker/1.0"})
         if r.status_code == 200:
@@ -62,11 +58,7 @@ def get_place_name(lat, lon):
 
 # ======== 🚗 TomTom Traffic Fetch ===========
 def fetch_traffic(lat, lon):
-    params = {
-        "point": f"{lat},{lon}",
-        "unit": "KMPH",
-        "key": TOMTOM_API_KEY
-    }
+    params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_API_KEY}
     r = requests.get(TOMTOM_URL, params=params)
     if r.status_code == 200:
         d = r.json()
@@ -79,12 +71,7 @@ def fetch_traffic(lat, lon):
 
 # ======== 🌦 OpenWeather Fetch ===========
 def fetch_weather(lat, lon):
-    params = {
-        "lat": lat,
-        "lon": lon,
-        "appid": OPENWEATHER_API_KEY,
-        "units": "metric"
-    }
+    params = {"lat": lat, "lon": lon, "appid": OPENWEATHER_API_KEY, "units": "metric"}
     r = requests.get(OPENWEATHER_URL, params=params)
     if r.status_code == 200:
         d = r.json()
@@ -101,11 +88,11 @@ def poll_data():
     while True:
         print("\n=== Fetching real-time bus + traffic + weather data ===")
         buses = fetch_mta_data()
-        for bus in buses[:5]:  # Limit for demo
+        for bus in buses[:5]:
             lat = bus["latitude"]
             lon = bus["longitude"]
             place_name = get_place_name(lat, lon)
-            ny_time = convert_to_ny(bus["timestamp"])  # ⏱️ now in New York time
+            ny_time = convert_to_ny(bus["timestamp"])
 
             traffic = fetch_traffic(lat, lon)
             weather = fetch_weather(lat, lon)
@@ -114,27 +101,20 @@ def poll_data():
             print(f"📍 Location: {place_name} ({lat:.5f}, {lon:.5f})")
             print(f"🕒 Timestamp (New York): {ny_time}")
 
-            # 🚗 Traffic Output
             if traffic:
-                print(f"🚗 Traffic - Current Speed: {traffic['current_speed']} km/h | "
-                      f"Free Flow Speed: {traffic['free_flow_speed']} km/h | "
-                      f"Ratio: {traffic['traffic_ratio']}")
+                print(f"🚗 Traffic - Current Speed: {traffic['current_speed']} km/h | Free Flow Speed: {traffic['free_flow_speed']} km/h | Ratio: {traffic['traffic_ratio']}")
                 if traffic["traffic_ratio"] > 1.1:
                     delay_sec = int((traffic["traffic_ratio"] - 1) * 60)
                     print(f"🕓 Bus likely delayed due to traffic (~{delay_sec} sec)")
             else:
                 print("🚗 Traffic data not available.")
 
-            # 🌦 Weather Output
             if weather:
-                print(f"🌦 Weather - Temp: {weather['temperature']}°C | "
-                      f"Humidity: {weather['humidity']}% | "
-                      f"Condition: {weather['weather']} | "
-                      f"Wind: {weather['wind_speed']} m/s")
+                print(f"☁️ Weather - Temp: {weather['temperature']} °C | Humidity: {weather['humidity']}% | Condition: {weather['weather']} | Wind: {weather['wind_speed']} m/s")
                 if weather['weather'] in ["Rain", "Snow", "Thunderstorm", "Drizzle"]:
                     print("☔ Weather may cause delays.")
             else:
-                print("🌦 Weather data not available.")
+                print("☁️ Weather data not available.")
 
         time.sleep(30)
 
