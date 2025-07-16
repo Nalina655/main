@@ -1,123 +1,145 @@
-import time
+import streamlit as st
+import pandas as pd
+import numpy as np
 import requests
-from datetime import datetime, timedelta
-from google.transit import gtfs_realtime_pb2
+import joblib
+from datetime import datetime
 import pytz
+import gtfs_realtime_pb2
+from keras.models import load_model
+import folium
+from streamlit_folium import folium_static
+import os
 
-# ======== 🔐 API KEYS ===========
+# === Load Model and Preprocessors ===
+model = load_model("lstm_eta_model.h5", compile=False)
+scaler = joblib.load("feature_scaler.pkl")
+weather_encoder = joblib.load("weather_encoder.pkl")
+
+# === API KEYS ===
 MTA_API_KEY = "bab3392b-58f0-42c2-8b61-421d6a03e72e"
 TOMTOM_API_KEY = "gmKSHRhMEQ1oXOnhV5wKL2B3WE45SZL9"
 OPENWEATHER_API_KEY = "d7836e8948f06edd3c191fa978ff266f"
 
-# ======== 🌐 API URLs ===========
+# === API URLs ===
 MTA_API_URL = "https://gtfsrt.prod.obanyc.com/vehiclePositions"
 TOMTOM_URL = "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
 OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
-REVERSE_GEOCODE_URL = "https://nominatim.openstreetmap.org/reverse"
 
-# ======== ⏱️ Convert to New York Time ===========
+# === Helper Functions ===
 def convert_to_ny(utc_timestamp):
     utc_dt = datetime.utcfromtimestamp(utc_timestamp).replace(tzinfo=pytz.utc)
     ny_tz = pytz.timezone("America/New_York")
-    ny_time = utc_dt.astimezone(ny_tz)
-    return ny_time.strftime("%Y-%m-%d %H:%M:%S %Z")
+    return ny_tz.normalize(utc_dt).strftime("%Y-%m-%d %H:%M:%S")
 
-# ======== 🚍 MTA GTFS Bus Fetch ===========
 def fetch_mta_data():
     headers = {"x-api-key": MTA_API_KEY}
     response = requests.get(MTA_API_URL, headers=headers)
     feed = gtfs_realtime_pb2.FeedMessage()
     feed.ParseFromString(response.content)
-
     buses = []
     for entity in feed.entity:
         if entity.HasField("vehicle"):
             v = entity.vehicle
             buses.append({
                 "vehicle_id": v.vehicle.id,
-                "trip_id": v.trip.trip_id,
                 "route_id": v.trip.route_id,
+                "trip_id": v.trip.trip_id,
                 "latitude": v.position.latitude,
                 "longitude": v.position.longitude,
-                "timestamp": v.timestamp,
-                "speed": v.position.speed if v.position.HasField("speed") else None
+                "timestamp": v.timestamp
             })
-    return buses
+    return buses[:10]
 
-# ======== 🌍 Reverse Geocoding ===========
-def get_place_name(lat, lon):
-    params = {"lat": lat, "lon": lon, "format": "json"}
+def fetch_traffic(lat, lon):
     try:
-        r = requests.get(REVERSE_GEOCODE_URL, params=params, headers={"User-Agent": "MTA-Bus-Tracker/1.0"})
+        params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_API_KEY}
+        r = requests.get(TOMTOM_URL, params=params)
         if r.status_code == 200:
-            data = r.json()
-            return data.get("display_name", "Unknown Location")
+            d = r.json()
+            return round(d["flowSegmentData"]["currentTravelTime"] / d["flowSegmentData"]["freeFlowTravelTime"], 2)
     except:
         pass
-    return "Unknown Location"
+    return 1.0
 
-# ======== 🚗 TomTom Traffic Fetch ===========
-def fetch_traffic(lat, lon):
-    params = {"point": f"{lat},{lon}", "unit": "KMPH", "key": TOMTOM_API_KEY}
-    r = requests.get(TOMTOM_URL, params=params)
-    if r.status_code == 200:
-        d = r.json()
-        return {
-            "current_speed": d["flowSegmentData"]["currentSpeed"],
-            "free_flow_speed": d["flowSegmentData"]["freeFlowSpeed"],
-            "traffic_ratio": round(d["flowSegmentData"]["currentTravelTime"] / d["flowSegmentData"]["freeFlowTravelTime"], 2)
-        }
-    return None
-
-# ======== 🌦 OpenWeather Fetch ===========
 def fetch_weather(lat, lon):
-    params = {"lat": lat, "lon": lon, "appid": OPENWEATHER_API_KEY, "units": "metric"}
-    r = requests.get(OPENWEATHER_URL, params=params)
-    if r.status_code == 200:
-        d = r.json()
-        return {
-            "temperature": d["main"]["temp"],
-            "humidity": d["main"]["humidity"],
-            "weather": d["weather"][0]["main"],
-            "wind_speed": d["wind"]["speed"]
-        }
-    return None
+    try:
+        params = {"lat": lat, "lon": lon, "appid": OPENWEATHER_API_KEY, "units": "metric"}
+        r = requests.get(OPENWEATHER_URL, params=params)
+        if r.status_code == 200:
+            d = r.json()
+            return d["main"]["temp"], d["weather"][0]["main"]
+    except:
+        pass
+    return 25.0, "Clear"
 
-# ======== 🔁 Loop to Fetch and Print Data ===========
-def poll_data():
-    while True:
-        print("\n=== Fetching real-time bus + traffic + weather data ===")
-        buses = fetch_mta_data()
-        for bus in buses[:5]:
-            lat = bus["latitude"]
-            lon = bus["longitude"]
-            place_name = get_place_name(lat, lon)
-            ny_time = convert_to_ny(bus["timestamp"])
+# === Streamlit UI ===
+st.set_page_config(page_title="Bus ETA Live Tracker", layout="wide")
+st.title("🚌 Real-Time Bus ETA Prediction (LSTM Model)")
 
-            traffic = fetch_traffic(lat, lon)
-            weather = fetch_weather(lat, lon)
+if "bus_history" not in st.session_state:
+    st.session_state["bus_history"] = {}
 
-            print(f"\n🚌 Bus ID: {bus['vehicle_id']} | Route: {bus['route_id']} | Trip: {bus['trip_id']}")
-            print(f"📍 Location: {place_name} ({lat:.5f}, {lon:.5f})")
-            print(f"🕒 Timestamp (New York): {ny_time}")
+bus_data = fetch_mta_data()
+table_data = []
 
-            if traffic:
-                print(f"🚗 Traffic - Current Speed: {traffic['current_speed']} km/h | Free Flow Speed: {traffic['free_flow_speed']} km/h | Ratio: {traffic['traffic_ratio']}")
-                if traffic["traffic_ratio"] > 1.1:
-                    delay_sec = int((traffic["traffic_ratio"] - 1) * 60)
-                    print(f"🕓 Bus likely delayed due to traffic (~{delay_sec} sec)")
-            else:
-                print("🚗 Traffic data not available.")
+if bus_data:
+    first = bus_data[0]
+    m = folium.Map(location=[first["latitude"], first["longitude"]], zoom_start=11)
 
-            if weather:
-                print(f"☁️ Weather - Temp: {weather['temperature']} °C | Humidity: {weather['humidity']}% | Condition: {weather['weather']} | Wind: {weather['wind_speed']} m/s")
-                if weather['weather'] in ["Rain", "Snow", "Thunderstorm", "Drizzle"]:
-                    print("☔ Weather may cause delays.")
-            else:
-                print("☁️ Weather data not available.")
+    for bus in bus_data:
+        lat, lon = bus["latitude"], bus["longitude"]
+        ts = bus["timestamp"]
+        ny_time = convert_to_ny(ts)
+        vehicle_id = bus["vehicle_id"]
 
-        time.sleep(30)
+        traffic_ratio = fetch_traffic(lat, lon)
+        temp, weather = fetch_weather(lat, lon)
 
-# ======== 🚀 Main ===========
-if __name__ == "__main__":
-    poll_data()
+        try:
+            weather_encoded = weather_encoder.transform([weather])[0]
+        except:
+            weather_encoded = 0
+
+        point = [traffic_ratio, temp, weather_encoded]
+        history = st.session_state["bus_history"].get(vehicle_id, [])
+        history.append(point)
+        st.session_state["bus_history"][vehicle_id] = history[-5:]
+
+        if len(st.session_state["bus_history"][vehicle_id]) < 5:
+            eta = 0
+        else:
+            X_df = pd.DataFrame(st.session_state["bus_history"][vehicle_id], columns=["traffic_ratio", "temperature", "weather_encoded"])
+            X_scaled = scaler.transform(X_df)
+            X_scaled = np.array(X_scaled).reshape(1, 5, 3)
+            try:
+                prediction = model.predict(X_scaled)
+                eta = prediction[0][0] if prediction.ndim == 2 else prediction[0]
+                eta = max(0, round(float(eta)))
+            except Exception as e:
+                st.error(f"Prediction failed for {vehicle_id}: {e}")
+                eta = 0
+
+        folium.Marker(
+            location=[lat, lon],
+            tooltip=str(vehicle_id),
+            popup=str(f"Bus ID: {vehicle_id}<br>Delay: {eta} sec<br>Weather: {weather}<br>Traffic: {traffic_ratio}"),
+            icon=folium.Icon(color="blue")
+        ).add_to(m)
+
+        table_data.append({
+            "Bus ID": vehicle_id,
+            "Route": bus["route_id"],
+            "Time (NY)": ny_time,
+            "ETA Delay (sec)": eta,
+            "Traffic Ratio": traffic_ratio,
+            "Temperature (°C)": temp,
+            "Weather": weather
+        })
+
+    folium_static(m, width=700, height=500)
+    st.subheader("📊 Live ETA Predictions")
+    st.dataframe(pd.DataFrame(table_data))
+
+else:
+    st.warning("⚠️ No bus data available.")
